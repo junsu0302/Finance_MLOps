@@ -1,0 +1,78 @@
+version: "3.9"
+
+services:
+  gitlab:
+    image: "gitlab/gitlab-ce:latest"
+    restart: always
+    hostname: gitlab.mlops.io
+    environment:
+      GITLAB_OMNIBUS_CONFIG: |
+        external_url 'http://gitlab.mlops.io:8929'
+        gitlab_rails['gitlab_shell_ssh_port'] = 9022
+        postgresql['enable'] = false
+        gitlab_rails['db_adapter'] = 'postgresql'
+        gitlab_rails['db_encoding'] = 'utf8'
+        gitlab_rails['db_host'] = 'postgres'
+        gitlab_rails['db_port'] = 5432
+        gitlab_rails['db_username'] = 'mlops'
+        gitlab_rails['db_password'] = 'mlops'
+        redis['enable'] = false
+        gitlab_rails['redis_host'] = 'redis'
+        gitlab_rails['redis_port'] = 6379
+        gitlab_rails['auto_migrate'] = false
+        gitlab_rails['monitoring_whitelist'] = ['127.0.0.1']
+    ports:
+      - "8929:8929"
+      - "9022:22"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8929/-/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 2m
+    volumes:
+      - "./docker-data/gitlab/config:/etc/gitlab"
+      - "./docker-data/gitlab/logs:/var/log/gitlab"
+      - "./docker-data/gitlab/data:/var/opt/gitlab"
+    shm_size: "256m"
+    depends_on:
+      - postgres
+      - redis
+
+  gitlab-runner:
+    image: gitlab/gitlab-runner:latest
+    restart: always
+    volumes:
+      - "./docker-data/gitlab-runner/config:/etc/gitlab-runner"
+      - "/var/run/docker.sock:/var/run/docker.sock"
+    depends_on:
+      - gitlab
+
+  postgres:
+    image: postgres:16
+    ports:
+      - 5432:5432
+    environment:
+      POSTGRES_USER: "mlops"
+      POSTGRES_PASSWORD: "mlops"
+      POSTGRES_DB: "mlops"
+    volumes:
+      - ./docker-data/postgres/data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "mlops"]
+      interval: 10s
+      retries: 5
+      start_period: 5s
+    restart: always
+
+  redis:
+    image: redis:latest
+    ports:
+      - 6379:6379
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 30s
+      retries: 50
+      start_period: 30s
+    restart: always
